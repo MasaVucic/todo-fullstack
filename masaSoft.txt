@@ -1,0 +1,160 @@
+dbBroker
+ Connection konekcija;
+    public void ucitajDrajver(){
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public void otvoriKonekciju(){
+        try {
+            konekcija=DriverManager.getConnection("jdbc:mysql://localhost:3306/prosoftmart19","root","");
+            konekcija.setAutoCommit(false);
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public void zatvoriKonekciju(){
+        try {
+            konekcija.close();
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    
+    public void commit(){
+        try {
+            konekcija.commit();
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    
+     public void rollback(){
+        try {
+            konekcija.rollback();
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+------------------------------------------------------------------------------------------------
+Pokreni server nit
+@Override
+    public void run() {
+        try {
+            ServerSocket ss=new ServerSocket(9000);
+            System.out.println("server je pokrenut");
+            while (true) {                
+                Socket s=ss.accept();
+                System.out.println("klijent se nakacio");
+                ObradaKlijentskogZahteva okz=new ObradaKlijentskogZahteva(s);
+                okz.start();
+            }
+        } catch (IOException ex) {
+            Logger.getLogger(PokreniServerNit.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+-----------------------------------------------------------------------------------------------
+ ObradaZahteva
+Socket klijentskiSoket;
+    boolean kraj=false;
+
+    public ObradaKlijentskogZahteva(Socket klijentskiSoket) {
+        this.klijentskiSoket = klijentskiSoket;
+    }
+    @Override
+    public void run() {
+        
+        while (!kraj) {            
+           KlijentskiZahtev kz=primiZahtev();
+           ServerskiOdgovor so=new ServerskiOdgovor();
+           switch(kz.getOperacija()){
+               case Konstante.VRATI_KLIJENTE:
+                  
+                   break;
+                   
+                case Konstante.VRATI_VRSTE:
+                   ArrayList<VrstaPostupka>listaVrsta=Kontroler.getInstanca().vratiVrste();
+                   so.setOdgovor(listaVrsta);
+                   break;
+                   
+                  case Konstante.VRATI_ADVOKATE:
+                   ArrayList<Advokat>listaAdvokata=Kontroler.getInstanca().vratiAdvokate();
+                   so.setOdgovor(listaAdvokata);
+                   break;
+                   
+                   case Konstante.SACUVAJ:
+                   ArrayList<Predmet>listaPredmeta=(ArrayList<Predmet>) kz.getParametar();
+                   boolean uspesno=Kontroler.getInstanca().sacuvajPredmete(listaPredmeta);
+                   if(uspesno){
+                   so.setPoruka("Uspesno sacuvano");
+                   }
+                   else{
+                    so.setPoruka("Neuspesno sacuvano");
+                   }
+                   so.setOdgovor(uspesno);
+                   break;
+           }
+           posaljiOdgovor(so);
+        }
+        
+    }
+
+    private KlijentskiZahtev primiZahtev() {
+        try {
+            ObjectInputStream ois=new ObjectInputStream(klijentskiSoket.getInputStream());
+            return (KlijentskiZahtev) ois.readObject();
+        } catch (IOException ex) {
+            Logger.getLogger(ObradaKlijentskogZahteva.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(ObradaKlijentskogZahteva.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
+
+    private void posaljiOdgovor(ServerskiOdgovor so) {
+        try {
+            ObjectOutputStream oos=new ObjectOutputStream(klijentskiSoket.getOutputStream());
+            oos.writeObject(so);
+        } catch (IOException ex) {
+            Logger.getLogger(ObradaKlijentskogZahteva.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+-----------------------------------------------------------------------------------------------
+Komunikacija sa serverom
+private static KomunikacijaSaServerom instance;
+    Socket s;
+    private KomunikacijaSaServerom() {
+        try {
+            s=new Socket("localhost",9000);
+        } catch (IOException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static KomunikacijaSaServerom getInstance() {
+        if(instance==null)
+            instance=new KomunikacijaSaServerom();
+        return instance;
+    }
+    public void posaljiZahtev(KlijentskiZahtev kz){
+        try {
+            ObjectOutputStream oos=new ObjectOutputStream(s.getOutputStream());
+            oos.writeObject(kz);
+        } catch (IOException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public ServerskiOdgovor primiOdgovor(){
+       
+        try {
+            ObjectInputStream ois=new ObjectInputStream(s.getInputStream());
+            return (ServerskiOdgovor) ois.readObject();
+        } catch (IOException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+    }   catch (ClassNotFoundException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return null;
+}
