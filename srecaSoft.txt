@@ -1,0 +1,401 @@
+dbBroker
+ Connection konekcija;
+    public void ucitajDrajver(){
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public void otvoriKonekciju(){
+        try {
+            konekcija=DriverManager.getConnection("jdbc:mysql://localhost:3306/prosoftmart19","root","");
+            konekcija.setAutoCommit(false);
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public void zatvoriKonekciju(){
+        try {
+            konekcija.close();
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    
+    public void commit(){
+        try {
+            konekcija.commit();
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    
+     public void rollback(){
+        try {
+            konekcija.rollback();
+        } catch (SQLException ex) {
+            Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+------------------------------------------------------------------------------------------------
+Pokreni server nit
+@Override
+    public void run() {
+        try {
+            ServerSocket ss=new ServerSocket(9000);
+            System.out.println("server je pokrenut");
+            while (true) {                
+                Socket s=ss.accept();
+                System.out.println("klijent se nakacio");
+                ObradaKlijentskogZahteva okz=new ObradaKlijentskogZahteva(s);
+                okz.start();
+            }
+        } catch (IOException ex) {
+            Logger.getLogger(PokreniServerNit.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+-----------------------------------------------------------------------------------------------
+ ObradaZahteva
+Socket klijentskiSoket;
+    boolean kraj=false;
+
+    public ObradaKlijentskogZahteva(Socket klijentskiSoket) {
+        this.klijentskiSoket = klijentskiSoket;
+    }
+    @Override
+    public void run() {
+        
+        while (!kraj) {            
+           KlijentskiZahtev kz=primiZahtev();
+           ServerskiOdgovor so=new ServerskiOdgovor();
+           switch(kz.getOperacija()){
+               case Konstante.VRATI_KLIJENTE:
+                  
+                   break;
+                   
+                case Konstante.VRATI_VRSTE:
+                   ArrayList<VrstaPostupka>listaVrsta=Kontroler.getInstanca().vratiVrste();
+                   so.setOdgovor(listaVrsta);
+                   break;
+                   
+                  case Konstante.VRATI_ADVOKATE:
+                   ArrayList<Advokat>listaAdvokata=Kontroler.getInstanca().vratiAdvokate();
+                   so.setOdgovor(listaAdvokata);
+                   break;
+                   
+                   case Konstante.SACUVAJ:
+                   ArrayList<Predmet>listaPredmeta=(ArrayList<Predmet>) kz.getParametar();
+                   boolean uspesno=Kontroler.getInstanca().sacuvajPredmete(listaPredmeta);
+                   if(uspesno){
+                   so.setPoruka("Uspesno sacuvano");
+                   }
+                   else{
+                    so.setPoruka("Neuspesno sacuvano");
+                   }
+                   so.setOdgovor(uspesno);
+                   break;
+           }
+           posaljiOdgovor(so);
+        }
+        
+    }
+
+    private KlijentskiZahtev primiZahtev() {
+        try {
+            ObjectInputStream ois=new ObjectInputStream(klijentskiSoket.getInputStream());
+            return (KlijentskiZahtev) ois.readObject();
+        } catch (IOException ex) {
+            Logger.getLogger(ObradaKlijentskogZahteva.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(ObradaKlijentskogZahteva.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
+
+    private void posaljiOdgovor(ServerskiOdgovor so) {
+        try {
+            ObjectOutputStream oos=new ObjectOutputStream(klijentskiSoket.getOutputStream());
+            oos.writeObject(so);
+        } catch (IOException ex) {
+            Logger.getLogger(ObradaKlijentskogZahteva.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+-----------------------------------------------------------------------------------------------
+Komunikacija sa serverom
+private static KomunikacijaSaServerom instance;
+    Socket s;
+    private KomunikacijaSaServerom() {
+        try {
+            s=new Socket("localhost",9000);
+        } catch (IOException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static KomunikacijaSaServerom getInstance() {
+        if(instance==null)
+            instance=new KomunikacijaSaServerom();
+        return instance;
+    }
+    public void posaljiZahtev(KlijentskiZahtev kz){
+        try {
+            ObjectOutputStream oos=new ObjectOutputStream(s.getOutputStream());
+            oos.writeObject(kz);
+        } catch (IOException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public ServerskiOdgovor primiOdgovor(){
+       
+        try {
+            ObjectInputStream ois=new ObjectInputStream(s.getInputStream());
+            return (ServerskiOdgovor) ois.readObject();
+        } catch (IOException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+    }   catch (ClassNotFoundException ex) {
+            Logger.getLogger(KomunikacijaSaServerom.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return null;
+}
+-------------------------------------------------------------------------------------------------------
+Osvezi nit
+ ServerskaForma sf;
+
+    public OsveziNit(ServerskaForma sf) {
+        this.sf = sf;
+    }
+
+    @Override
+    public void run() {
+        while (true) {            
+            sf.srediTabelu();
+            System.out.println("osvezio");
+            try {
+                sleep(10);
+            } catch (InterruptedException ex) {
+                Logger.getLogger(OsveziNit.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+    }
+--------------------------------------------------------------------------------------------------------
+Model Tabele
+ArrayList<Projekcija>lista;
+     SimpleDateFormat sdf=new SimpleDateFormat("dd.MM.yyyy hh:mm");
+
+    public ModelTabeleProjekcija() {
+        lista=new ArrayList<>();
+    }
+    
+    @Override
+    public int getRowCount() {
+       return lista.size();
+    }
+
+    @Override
+    public int getColumnCount() {
+      return 3;
+    }
+
+    @Override
+    public Object getValueAt(int rowIndex, int columnIndex) {
+       Projekcija p=lista.get(rowIndex);
+       switch(columnIndex){
+           case 0:return p.getFilm();
+           case 1:return p.getFilm().getReziser();
+           case 2:return sdf.format(p.getDatumVremeProjekcije());
+           default:return "";
+       }
+    }
+
+    @Override
+    public String getColumnName(int column) {
+       switch(column){
+           case 0:return "Film";
+           case 1:return "Reziser";
+           case 2:return "Datum i vreme projekcije";
+           default:return "";
+       }
+    }
+
+    public ArrayList<Projekcija> getLista() {
+        return lista;
+    }
+
+    public void setLista(ArrayList<Projekcija> lista) {
+        this.lista = lista;
+    }
+
+    public void ubaci(Projekcija p) {
+        if(!lista.contains(p)){
+        lista.add(p);
+        fireTableDataChanged();
+        }
+    }
+
+    public void obrisi(int red) {
+        lista.remove(red);
+        fireTableDataChanged();
+    }
+  ------------------------------------------------------------------------------------------------------------------------------------------------------
+import java.util.logging.Level;
+------------------------------------------------------------------------------------------------------------------------------------------------------
+  private static  Kontroler instanca;
+    DBBroker db;
+    private Kontroler() {
+        db=new DBBroker();
+    }
+
+    public static Kontroler getInstanca() {
+        if(instanca==null){
+        instanca=new Kontroler();
+        }
+        return instanca;
+    }
+------------------------------------------------------------------------------------------------------------------------------------------------------
+Klijentska forma popuniKombo
+KlijentskiZahtev kz = new KlijentskiZahtev();
+        kz.setOperacija(Operacije.POPUNIG);
+        KomunikacijaSaServerom.getInstance().posaljiZahtev(kz);
+        ServerskiOdgovor so = KomunikacijaSaServerom.getInstance().primiOdgovor();
+        ArrayList<Grad> lista = (ArrayList<Grad>) so.getOdgovor();
+        cmbGrad.removeAllItems();
+        for (Grad grad : lista) {
+             cmbGrad.addItem(grad);
+        }
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+Obrada zahteva popuniKombo
+ case Operacije.POPUNIG:
+                         ArrayList<Grad>lista1=Kontroler.getInstanca().vratiGradove();
+                    so.setOdgovor(lista1);
+                      
+                   break;
+---------------------------------------------------------------------------------------------------------------------------------------------------
+Kontroler popuniKombo
+  db.ucitajDrajver();
+       db.otvoriKonekciju();
+       ArrayList<Grad>lista=db.vratiGradove();
+       db.zatvoriKonekciju();
+       return lista;
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+DBBroker
+ArrayList<Grad>lista=new ArrayList<>();
+      String upit="select * from grad";
+         try {
+             Statement s=konekcija.createStatement();
+             ResultSet rs=s.executeQuery(upit);
+             while (rs.next()) {                 
+                 int gradID=rs.getInt("GradID");
+                 int ptt=rs.getInt("Ptt");
+                 String naziv=rs.getString("Naziv");
+                Grad g=new Grad(gradID, ptt, naziv);
+                 lista.add(g);
+             }
+         } catch (SQLException ex) {
+             Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+         }
+         return lista;
+------------------------------------------------------------------------------------------------------------------------------------------------------
+DBBroker vratiMax
+  int max=0;
+      String upit="select max(festivalID) as max from festival";
+         try {
+             Statement s=konekcija.createStatement();
+             ResultSet rs=s.executeQuery(upit);
+             while (rs.next()) {                 
+                 max=rs.getInt("max");
+             }
+         } catch (SQLException ex) {
+             Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+         }
+         return ++max;
+-------------------------------------------------------------------------------------------------------------------------------------------------
+LoginForma
+  String korisnickoIme=txtKorisnickoIme.getText();
+       String lozinka=txtLozinka.getText();
+        Poljoprivrednik p=new Poljoprivrednik();
+        p.setKorisnickoIme(korisnickoIme);
+        p.setLozinka(lozinka);
+        KlijentskiZahtev kz=new KlijentskiZahtev();
+        kz.setOperacija(Operacije.LOGIN);
+        kz.setParametar(p);
+        KomunikacijaSaServerom.getInstance().posaljiZahtev(kz);
+        ServerskiOdgovor so=KomunikacijaSaServerom.getInstance().primiOdgovor();
+        
+        Poljoprivrednik ulogovaniPolj=(Poljoprivrednik) so.getOdgovor();
+        JOptionPane.showMessageDialog(this,so.getPoruka());
+        
+        if(ulogovaniPolj!=null){
+            KlijentskaForma kf=new KlijentskaForma();
+            kf.setVisible(true);
+            this.setVisible(false);
+            System.out.println(ulogovaniPolj);
+            
+        }
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+ObradaZahteva login
+case Operacije.LOGIN:
+                      Poljoprivrednik p=(Poljoprivrednik) kz.getParametar();
+                      so=Kontroler.getInstanca().login(p);
+                      
+                   break;
+----------------------------------------------------------------------------------------------------------------------------------------------------
+Kontroler
+ ServerskiOdgovor so=new ServerskiOdgovor();
+        db.ucitajDrajver();
+        db.otvoriKonekciju();
+        Poljoprivrednik po=db.login(p);
+        db.zatvoriKonekciju();
+        so.setOdgovor(po);
+        
+        if(po==null){
+        so.setPoruka("Pogresni podaci");
+        }
+        else{
+        so.setPoruka("Uspesno ste se ulogovali");
+        }
+        return so;
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+DBroker login
+ Poljoprivrednik po=null;
+         try {
+             String sql="select * from poljoprivrednik where korisnickoIme=? and lozinka=? LIMIT 1";
+             PreparedStatement ps=konekcija.prepareStatement(sql);
+             ps.setString(1,p.getKorisnickoIme());
+             ps.setString(2,p.getLozinka());
+             ResultSet rs=ps.executeQuery();
+             
+             while (rs.next()) {                 
+                 po=new Poljoprivrednik(rs.getInt("PoljoprivrednikID"),rs.getString("Ime"),rs.getString("Prezime"),rs.getString("KorisnickoIme"), rs.getString("Lozinka"));
+             }
+         } catch (SQLException ex) {
+             Logger.getLogger(DBBroker.class.getName()).log(Level.SEVERE, null, ex);
+         }
+         return po;
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+"select a.Ime,a.Prezime,count(p.predmetID) as brojPredmeta from advokat a join predmet p on a.advokatID=p.AdvokatID where a.ime like '%"+pretraga+"%' or a.prezime like '%"+pretraga+"%' GROUP BY a.advokatID ORDER BY brojPredmeta desc" 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- 
+ db.ucitajDrajever();
+        db.otvoriKonekciju();
+        ArrayList<Rec>listaReci=db.vratiReci();
+        for (Rec rec : listaReci) {
+            ArrayList<Prevod>listaPrevoda=db.vratiPrevode(rec.getRecID());
+            rec.setListaPrevoda(listaPrevoda);
+        }
+        db.zatvoriKonekciju();
+        return listaReci;
+---------------------------------------------------------------------------------------------------------------------------------------------
+switch(columnIndex){
+           case 0:return r;
+           case 1:
+               ArrayList<Prevod>listaPrevoda=r.getListaPrevoda();
+               String nalepi="";
+               for (Prevod p : listaPrevoda) {
+                 nalepi+=p;
+               }
+               return nalepi;
+               default:return "zajeban rok";
+       }
+----------------------------------------------------------------------------------------------------------------------------------------------------------------      
+
+
